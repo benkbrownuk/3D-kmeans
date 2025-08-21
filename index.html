@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>3D k-means Clustering Demo</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(255,255,255,0.9);
+      padding: 10px;
+      border-radius: 8px;
+      z-index: 10;
+    }
+    button, select {
+      margin: 5px;
+      font-size: 1em;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <label for="k-select">Number of clusters (k):</label>
+    <select id="k-select">
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+    </select>
+    <button id="assign-btn">Assign Points</button>
+    <button id="move-btn">Move Centroids</button>
+    <button id="reset-btn">Reset</button>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
+  <script>
+    // --- Parameters ---
+    const NUM_POINTS = 50;
+    const POINT_RADIUS = 0.15;
+    const CENTROID_RADIUS = 0.25;
+    const SPACE_SIZE = 5;
+    let k = 2;
+    let points = [];
+    let centroids = [];
+    let assignments = [];
+    let lines = [];
+
+    // --- Three.js Setup ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
+    camera.position.set(0, 0, 12);
+    const renderer = new THREE.WebGLRenderer({antialias: true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Lighting
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const light = new THREE.PointLight(0xffffff, 0.8);
+    light.position.set(10, 10, 10);
+    scene.add(light);
+
+    // --- Helper Functions ---
+    function randomVec3() {
+      return new THREE.Vector3(
+        (Math.random()-0.5)*SPACE_SIZE,
+        (Math.random()-0.5)*SPACE_SIZE,
+        (Math.random()-0.5)*SPACE_SIZE
+      );
+    }
+
+    function createSphere(pos, color, radius) {
+      const geometry = new THREE.SphereGeometry(radius, 16, 16);
+      const material = new THREE.MeshPhongMaterial({color});
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.copy(pos);
+      return mesh;
+    }
+
+    function clearScene() {
+      // Remove all points, centroids, lines
+      points.forEach(p => scene.remove(p.mesh));
+      centroids.forEach(c => scene.remove(c.mesh));
+      lines.forEach(l => scene.remove(l));
+      points = [];
+      centroids = [];
+      assignments = [];
+      lines = [];
+    }
+
+    function initPoints() {
+      points = [];
+      for (let i = 0; i < NUM_POINTS; i++) {
+        const pos = randomVec3();
+        const mesh = createSphere(pos, 0x3333ff, POINT_RADIUS);
+        scene.add(mesh);
+        points.push({pos, mesh});
+      }
+    }
+
+    function initCentroids() {
+      centroids = [];
+      for (let i = 0; i < k; i++) {
+        const pos = randomVec3();
+        const mesh = createSphere(pos, 0xff3333, CENTROID_RADIUS);
+        scene.add(mesh);
+        centroids.push({pos, mesh});
+      }
+    }
+
+    function assignPoints() {
+      assignments = [];
+      lines.forEach(l => scene.remove(l));
+      lines = [];
+      for (let i = 0; i < points.length; i++) {
+        let minDist = Infinity;
+        let minIdx = -1;
+        for (let j = 0; j < centroids.length; j++) {
+          const dist = points[i].pos.distanceTo(centroids[j].pos);
+          if (dist < minDist) {
+            minDist = dist;
+            minIdx = j;
+          }
+        }
+        assignments[i] = minIdx;
+        // Draw line from point to centroid
+        const material = new THREE.LineBasicMaterial({color: 0x888888});
+        const geometry = new THREE.BufferGeometry().setFromPoints([
+          points[i].pos,
+          centroids[minIdx].pos
+        ]);
+        const line = new THREE.Line(geometry, material);
+        scene.add(line);
+        lines.push(line);
+      }
+    }
+
+    function moveCentroids() {
+      for (let j = 0; j < centroids.length; j++) {
+        let sum = new THREE.Vector3(0,0,0);
+        let count = 0;
+        for (let i = 0; i < points.length; i++) {
+          if (assignments[i] === j) {
+            sum.add(points[i].pos);
+            count++;
+          }
+        }
+        if (count > 0) {
+          sum.multiplyScalar(1/count);
+          centroids[j].pos.copy(sum);
+          centroids[j].mesh.position.copy(sum);
+        }
+      }
+      assignPoints(); // redraw lines
+    }
+
+    function resetAll() {
+      clearScene();
+      initPoints();
+      initCentroids();
+      renderer.render(scene, camera);
+    }
+
+    // --- UI Event Listeners ---
+    document.getElementById('k-select').addEventListener('change', e => {
+      k = parseInt(e.target.value);
+      resetAll();
+    });
+    document.getElementById('assign-btn').addEventListener('click', assignPoints);
+    document.getElementById('move-btn').addEventListener('click', moveCentroids);
+    document.getElementById('reset-btn').addEventListener('click', resetAll);
+
+    // --- Initial Setup ---
+    resetAll();
+
+    // --- Animation Loop ---
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // --- Responsive Resize ---
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
